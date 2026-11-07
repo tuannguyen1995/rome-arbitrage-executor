@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { createPublicClient, http, formatUnits, parseAbi } from "viem";
-import { Connection } from "@solana/web3.js";
+import { Connection, PublicKey } from "@solana/web3.js";
 import {
   Zap,
   TrendingUp,
@@ -28,6 +28,8 @@ import {
   Gauge,
   Lock,
   Compass,
+  X,
+  Globe,
 } from "lucide-react";
 
 // ─── Network & Protocol Constants ────────────────────────────────────────────
@@ -72,9 +74,16 @@ interface ExecutionTelemetry {
 }
 
 export default function App() {
-  const [walletConnected, setWalletConnected] = useState(false);
-  const [walletAddress, setWalletAddress] = useState("");
-  const [userBalance, setUserBalance] = useState("0.00");
+  // Dual-Lane Wallet States
+  const [walletModalOpen, setWalletModalOpen] = useState(false);
+  const [solanaConnected, setSolanaConnected] = useState(false);
+  const [solanaAddress, setSolanaAddress] = useState("");
+  const [solanaBalance, setSolanaBalance] = useState("0.00");
+
+  const [evmConnected, setEvmConnected] = useState(false);
+  const [evmAddress, setEvmAddress] = useState("");
+  const [evmBalance, setEvmBalance] = useState("0.00");
+
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
 
   // Live Telemetry States
@@ -86,14 +95,15 @@ export default function App() {
   // Spread Dynamics
   const [evmPrice, setEvmPrice] = useState<number>(89.98);
   const [solPrice, setSolPrice] = useState<number>(89.72);
-  const [spreadBps, setSpreadBps] = useState<number>(29); // 0.29%
+  const [spreadBps, setSpreadBps] = useState<number>(29);
 
   // Execution Console Controls
   const [tradeCapital, setTradeCapital] = useState<number>(250);
   const [minProfitTarget, setMinProfitTarget] = useState<number>(0.5);
-  const [leverageMode, setLeverageMode] = useState<number>(1); // 1x, 5x, 10x Flash Loan
+  const [leverageMode, setLeverageMode] = useState<number>(1);
   const [executionMode, setExecutionMode] = useState<"AUTONOMOUS_BOT" | "MANUAL_STRIKE">("AUTONOMOUS_BOT");
   const [isStriking, setIsStriking] = useState(false);
+
   const [consoleLogs, setConsoleLogs] = useState<string[]>([
     "SYS_INIT: Dual-VM Synapse Engine online.",
     "ROME_EVM: Subscribed to UniswapV3 (0xD9E3...D5bD).",
@@ -124,20 +134,9 @@ export default function App() {
       latencyMs: 412,
       status: "ATOMIC_SETTLED",
     },
-    {
-      id: "tel-03",
-      timestamp: "12:06:18",
-      direction: "SOLANA_TO_EVM",
-      inAmountUsdc: 100,
-      netProfitUsdc: 0.318,
-      evmTxHash: "0x77c4a10...92e1",
-      solanaSlot: 519550540,
-      latencyMs: 395,
-      status: "ATOMIC_SETTLED",
-    },
   ]);
 
-  // Real on-chain polling
+  // Real On-Chain Sync
   const syncOnChainTelemetry = async () => {
     try {
       const [block, gas, slot] = await Promise.all([
@@ -152,7 +151,6 @@ export default function App() {
       const gasFmt = (+formatUnits(gas, 18)).toFixed(5);
       setGasPriceUsdc(+gasFmt > 0 ? gasFmt : "0.03500");
 
-      // Live market price feed
       try {
         const res = await fetch("https://api.binance.com/api/v3/ticker/price?symbol=SOLUSDC");
         const data = await res.json();
@@ -168,9 +166,17 @@ export default function App() {
         }
       } catch {}
 
-      if (walletAddress) {
-        const bal = await evmClient.getBalance({ address: walletAddress as `0x${string}` });
-        setUserBalance((+formatUnits(bal, 18)).toFixed(4));
+      if (evmAddress) {
+        const bal = await evmClient.getBalance({ address: evmAddress as `0x${string}` });
+        setEvmBalance((+formatUnits(bal, 18)).toFixed(4));
+      }
+
+      if (solanaAddress) {
+        try {
+          const pk = new PublicKey(solanaAddress);
+          const lamports = await solanaConn.getBalance(pk);
+          setSolanaBalance((lamports / 1e9).toFixed(3));
+        } catch {}
       }
     } catch (e) {
       console.error("Telemetry sync error:", e);
@@ -181,7 +187,7 @@ export default function App() {
     syncOnChainTelemetry();
     const interval = setInterval(syncOnChainTelemetry, 2500);
     return () => clearInterval(interval);
-  }, [walletAddress]);
+  }, [evmAddress, solanaAddress]);
 
   const copyToClipboard = (text: string, key: string) => {
     navigator.clipboard.writeText(text);
@@ -189,42 +195,78 @@ export default function App() {
     setTimeout(() => setCopiedKey(null), 2000);
   };
 
-  const handleConnectWallet = async () => {
-    if (walletConnected) {
-      setWalletConnected(false);
-      setWalletAddress("");
-      return;
-    }
-    if (!(window as any).ethereum) {
-      alert("Please install MetaMask to command the Rome Arbitrage Engine!");
+  // 1. Connect Solana Native Wallet (Phantom / Backpack)
+  const connectPhantomSolana = async () => {
+    const solana = (window as any).phantom?.solana || (window as any).solana;
+    if (!solana) {
+      window.open("https://phantom.app/", "_blank");
       return;
     }
     try {
-      const eth = (window as any).ethereum;
+      const resp = await solana.connect();
+      const pubkey = resp.publicKey.toString();
+      setSolanaAddress(pubkey);
+      setSolanaConnected(true);
+      setWalletModalOpen(false);
+
+      const pk = new PublicKey(pubkey);
+      const lamports = await solanaConn.getBalance(pk);
+      setSolanaBalance((lamports / 1e9).toFixed(3));
+
+      setConsoleLogs((prev) => [
+        `SOLANA_AUTH: Phantom connected via Native Sealevel. Pubkey: ${pubkey.slice(0, 8)}...`,
+        ...prev,
+      ]);
+    } catch (err: any) {
+      console.error("Phantom connect error:", err);
+    }
+  };
+
+  // 2. Connect EVM Wallet (MetaMask)
+  const connectMetaMask = async () => {
+    let eth = (window as any).ethereum;
+    if (eth?.providers) {
+      eth = eth.providers.find((p: any) => p.isMetaMask && !p.isPhantom) || eth;
+    }
+    if (!eth) {
+      window.open("https://metamask.io/", "_blank");
+      return;
+    }
+    try {
       const accounts = await eth.request({ method: "eth_requestAccounts" });
       if (accounts && accounts[0]) {
-        setWalletAddress(accounts[0]);
-        setWalletConnected(true);
+        setEvmAddress(accounts[0]);
+        setEvmConnected(true);
+        setWalletModalOpen(false);
+
         try {
           await eth.request({
             method: "wallet_switchEthereumChain",
             params: [{ chainId: HADRIAN_CHAIN_PARAMS.chainId }],
           });
-        } catch (err: any) {
-          if (err.code === 4902) {
+        } catch (switchError: any) {
+          if (switchError.code === 4902) {
             await eth.request({
               method: "wallet_addEthereumChain",
               params: [HADRIAN_CHAIN_PARAMS],
             });
           }
         }
+
+        const bal = await evmClient.getBalance({ address: accounts[0] });
+        setEvmBalance((+formatUnits(bal, 18)).toFixed(4));
+
+        setConsoleLogs((prev) => [
+          `ROME_AUTH: MetaMask connected to Hadrian Testnet (200010). Address: ${accounts[0].slice(0, 8)}...`,
+          ...prev,
+        ]);
       }
-    } catch (err) {
-      console.error(err);
+    } catch (err: any) {
+      console.error("MetaMask connect error:", err);
     }
   };
 
-  // Trigger On-Chain Strike
+  // Execute On-Chain Strike
   const handleExecuteStrike = async () => {
     setIsStriking(true);
     const logTime = new Date().toLocaleTimeString();
@@ -265,10 +307,90 @@ export default function App() {
     }, 1900);
   };
 
+  const isAnyWalletConnected = solanaConnected || evmConnected;
+
   return (
     <div className="min-h-screen bg-radial-mesh bg-cyber-grid text-slate-100 antialiased relative">
-      {/* Top Imperator Status Bar */}
-      <div className="border-b border-indigo-900/40 bg-black/60 backdrop-blur-xl sticky top-0 z-50">
+      {/* ─── DUAL-LANE WALLET MODAL ────────────────────────────────────────── */}
+      {walletModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md">
+          <div className="w-full max-w-md p-6 rounded-3xl glass-panel-gold border border-amber-500/40 shadow-2xl space-y-6 relative animate-in fade-in zoom-in duration-200">
+            <div className="flex items-center justify-between pb-4 border-b border-slate-800">
+              <div className="flex items-center gap-2">
+                <Wallet className="w-5 h-5 text-amber-400" />
+                <h3 className="font-cinzel text-lg font-bold text-white">CHOOSE RUNTIME LANE</h3>
+              </div>
+              <button
+                onClick={() => setWalletModalOpen(false)}
+                className="p-1.5 rounded-xl bg-slate-900 text-slate-400 hover:text-white transition"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <p className="text-xs text-slate-300 leading-relaxed">
+              Rome runs a real EVM inside Solana. You can command this engine using either a <strong>Native Solana Wallet</strong> or a <strong>Rome EVM Wallet</strong>.
+            </p>
+
+            <div className="space-y-3">
+              {/* Option 1: Phantom (Solana Native Lane) */}
+              <button
+                onClick={connectPhantomSolana}
+                className="w-full p-4 rounded-2xl bg-[#1b1535]/90 hover:bg-[#251d4d] border border-purple-500/40 text-left transition flex items-center justify-between group shadow-lg shadow-purple-900/20 active:scale-[0.98]"
+              >
+                <div className="flex items-center gap-3.5">
+                  <div className="w-11 h-11 rounded-xl bg-purple-600/30 border border-purple-500/40 flex items-center justify-center text-xl">
+                    👻
+                  </div>
+                  <div>
+                    <div className="font-bold text-sm text-purple-200 flex items-center gap-2">
+                      Phantom Wallet
+                      <span className="px-2 py-0.5 rounded-full text-[9px] font-mono font-bold bg-purple-500/20 text-purple-300 border border-purple-500/30">
+                        SOLANA NATIVE
+                      </span>
+                    </div>
+                    <div className="text-[11px] text-slate-400">
+                      Connects directly via Solana runtime (No EVM chain error)
+                    </div>
+                  </div>
+                </div>
+                <ChevronRight className="w-4 h-4 text-purple-400 group-hover:translate-x-1 transition" />
+              </button>
+
+              {/* Option 2: MetaMask (Rome EVM Lane) */}
+              <button
+                onClick={connectMetaMask}
+                className="w-full p-4 rounded-2xl bg-[#281a12]/90 hover:bg-[#382315] border border-orange-500/40 text-left transition flex items-center justify-between group shadow-lg shadow-orange-900/20 active:scale-[0.98]"
+              >
+                <div className="flex items-center gap-3.5">
+                  <div className="w-11 h-11 rounded-xl bg-orange-600/30 border border-orange-500/40 flex items-center justify-center text-xl">
+                    🦊
+                  </div>
+                  <div>
+                    <div className="font-bold text-sm text-orange-200 flex items-center gap-2">
+                      MetaMask Wallet
+                      <span className="px-2 py-0.5 rounded-full text-[9px] font-mono font-bold bg-orange-500/20 text-orange-300 border border-orange-500/30">
+                        ROME EVM LANE
+                      </span>
+                    </div>
+                    <div className="text-[11px] text-slate-400">
+                      Connects to Rome Hadrian Testnet (Chain ID: 200010)
+                    </div>
+                  </div>
+                </div>
+                <ChevronRight className="w-4 h-4 text-orange-400 group-hover:translate-x-1 transition" />
+              </button>
+            </div>
+
+            <div className="p-3 rounded-xl bg-black/50 border border-slate-800 text-[11px] text-slate-400 font-mono">
+              💡 <strong>Dual-Lane Note:</strong> Phantom operates on native Solana pubkeys. If Phantom prompts "Unsupported Network", use the <strong>Phantom (Solana Native)</strong> button above to connect without EVM errors!
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ─── TOP STATUS BAR ────────────────────────────────────────────────── */}
+      <div className="border-b border-indigo-900/40 bg-black/60 backdrop-blur-xl sticky top-0 z-40">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-20 flex items-center justify-between gap-4">
           {/* Logo & Roman Brand */}
           <div className="flex items-center gap-3.5">
@@ -314,34 +436,44 @@ export default function App() {
             </div>
           </div>
 
-          {/* Wallet Trigger */}
+          {/* Dual Wallet Status / Connect Button */}
           <div className="flex items-center gap-3">
-            {walletConnected && (
-              <div className="hidden md:flex flex-col text-right font-mono">
-                <span className="text-[10px] text-slate-400">HADRIAN VAULT</span>
-                <span className="text-xs font-bold text-amber-300">{userBalance} USDC</span>
+            {solanaConnected && (
+              <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-purple-950/60 border border-purple-500/40 text-xs font-mono">
+                <span>👻</span>
+                <span className="text-purple-300 font-bold">
+                  {solanaAddress.slice(0, 4)}...{solanaAddress.slice(-4)}
+                </span>
+                <span className="text-slate-500">|</span>
+                <span className="text-amber-300 font-bold">{solanaBalance} SOL</span>
               </div>
             )}
+
+            {evmConnected && (
+              <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-orange-950/60 border border-orange-500/40 text-xs font-mono">
+                <span>🦊</span>
+                <span className="text-orange-300 font-bold">
+                  {evmAddress.slice(0, 4)}...{evmAddress.slice(-4)}
+                </span>
+                <span className="text-slate-500">|</span>
+                <span className="text-amber-300 font-bold">{evmBalance} USDC</span>
+              </div>
+            )}
+
             <button
-              onClick={handleConnectWallet}
-              className={`flex items-center gap-2.5 px-5 py-2.5 rounded-xl font-medium text-xs transition-all tracking-wide shadow-lg ${
-                walletConnected
-                  ? "bg-slate-900 border border-amber-500/40 text-amber-300 shadow-amber-500/10"
-                  : "bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-black font-bold shadow-amber-500/20 active:scale-95"
-              }`}
+              onClick={() => setWalletModalOpen(true)}
+              className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-black font-extrabold text-xs transition-all tracking-wide shadow-lg shadow-amber-500/20 active:scale-95"
             >
               <Wallet className="w-4 h-4" />
-              {walletConnected
-                ? `${walletAddress.slice(0, 6)}...${walletAddress.slice(-4)}`
-                : "CONNECT IMPERATOR WALLET"}
+              {isAnyWalletConnected ? "MANAGE WALLETS" : "CONNECT IMPERATOR WALLET"}
             </button>
           </div>
         </div>
       </div>
 
-      {/* Main Command Room */}
+      {/* ─── MAIN COMMAND ROOM ─────────────────────────────────────────────── */}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8">
-        {/* ─── SECTION 1: THE DUAL-VM SYNAPSE COLLIDER (Centerpiece) ────────── */}
+        {/* ─── SECTION 1: THE DUAL-VM SYNAPSE COLLIDER ──────────────────────── */}
         <section className="p-1 rounded-3xl bg-gradient-to-r from-cyan-500/20 via-amber-500/30 to-purple-500/20 animated-border-glow shadow-2xl relative overflow-hidden">
           <div className="p-6 md:p-8 rounded-[22px] bg-[#090d16]/95 backdrop-blur-2xl space-y-6 relative">
             <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 pb-4 border-b border-slate-800/80">
@@ -392,8 +524,10 @@ export default function App() {
                   </div>
                 </div>
                 <div className="p-2.5 rounded-lg bg-black/40 border border-cyan-500/20 text-[11px] font-mono text-slate-300 flex justify-between">
-                  <span>Routing Pair:</span>
-                  <span className="text-cyan-300 font-bold">wSOL ➔ wUSDC</span>
+                  <span>Connected EVM:</span>
+                  <span className="text-cyan-300 font-bold truncate max-w-[140px]">
+                    {evmConnected ? evmAddress : "MetaMask Not Linked"}
+                  </span>
                 </div>
               </div>
 
@@ -435,8 +569,10 @@ export default function App() {
                   </div>
                 </div>
                 <div className="p-2.5 rounded-lg bg-black/40 border border-purple-500/20 text-[11px] font-mono text-slate-300 flex justify-between">
-                  <span>Routing Pair:</span>
-                  <span className="text-purple-300 font-bold">wUSDC ➔ wSOL</span>
+                  <span>Connected Solana:</span>
+                  <span className="text-purple-300 font-bold truncate max-w-[140px]">
+                    {solanaConnected ? solanaAddress : "Phantom Not Linked"}
+                  </span>
                 </div>
               </div>
             </div>
