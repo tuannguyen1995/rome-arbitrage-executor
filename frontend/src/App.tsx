@@ -283,9 +283,6 @@ export default function App() {
                 <h1 className="font-cinzel text-xl font-extrabold tracking-wider bg-gradient-to-r from-amber-200 via-amber-400 to-amber-100 bg-clip-text text-transparent">
                   ROME IMPERIUM
                 </h1>
-                <span className="px-2 py-0.5 rounded-full text-[10px] font-mono font-bold uppercase tracking-wider bg-amber-500/10 text-amber-300 border border-amber-500/30">
-                  DUAL-VM v2.4
-                </span>
               </div>
               <p className="text-[11px] text-slate-400 font-mono tracking-tight hidden sm:block">
                 SOLANA L1 RUNTIME ATOMIC ARBITRAGE COLLIDER
@@ -336,7 +333,7 @@ export default function App() {
               <Wallet className="w-4 h-4" />
               {walletConnected
                 ? `${walletAddress.slice(0, 6)}...${walletAddress.slice(-4)}`
-                : "CONNECT IMPERATOR ví"}
+                : "CONNECT IMPERATOR WALLET"}
             </button>
           </div>
         </div>
