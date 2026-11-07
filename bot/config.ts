@@ -46,7 +46,7 @@ export const CONFIG: BotConfig = {
   solanaRpcUrl: process.env.SOLANA_RPC_URL || "https://api.devnet.solana.com",
   gasToken: "USDC",
   gasDecimals: 6,
-  executorContractAddress: (process.env.EXECUTOR_ADDRESS || "0x0000000000000000000000000000000000000000") as `0x${string}`,
+  executorContractAddress: (process.env.EXECUTOR_ADDRESS || "0x08c1b47f9526e2aa190ba6f158a4f3a315a7135b") as `0x${string}`,
   privateKey: (process.env.PRIVATE_KEY || "0x0000000000000000000000000000000000000000000000000000000000000000") as `0x${string}`,
   minProfitUsdc: Number(process.env.MIN_PROFIT_USDC || 0.1),
   minSpreadPercent: Number(process.env.MIN_SPREAD_PERCENT || 0.25),

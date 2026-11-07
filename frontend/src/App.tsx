@@ -56,7 +56,7 @@ const evmClient = createPublicClient({ transport: http(HADRIAN_RPC) });
 const solanaConn = new Connection(SOLANA_RPC, "confirmed");
 
 const PROTOCOL_CONTRACTS = {
-  executor: "0x892aF014b292eC7C1Db184e125F4C7581B806Fe4",
+  executor: "0x08c1b47f9526e2aa190ba6f158a4f3a315a7135b",
   uniswapV3Factory: "0xD9E323088561D40267767b52252595ea9cF1D5bD",
   swapRouter: "0x08CA15F54b2bf33AB695548B08101d7174eF83cA",
   quoterV2: "0x7BdBFbdAEB2ed0E8DA6F7FD8804bE11f86BB68dd",
@@ -1513,18 +1513,6 @@ export default function App() {
               <Droplets className="w-4 h-4 text-cyan-300 animate-pulse" />
               <span>FAUCET</span>
             </button>
-
-            {/* SOVEREIGN DEPLOYER (ADMIN) BUTTON */}
-            {isAdminUnlocked && (
-              <button
-                onClick={() => setDeployerModalOpen(true)}
-                className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-gradient-to-r from-amber-600/30 to-yellow-600/30 hover:from-amber-600/40 hover:to-yellow-600/40 border border-amber-500/50 text-amber-200 font-bold text-xs shadow-lg transition active:scale-95 animate-pulse"
-                title="Sovereign Contract Deployer"
-              >
-                <Cpu className="w-4 h-4 text-amber-400" />
-                <span>DEPLOYER (ADMIN)</span>
-              </button>
-            )}
 
             {solanaConnected && (
               <div className="hidden md:flex items-center gap-2 px-3 py-1.5 rounded-xl bg-purple-950/60 border border-purple-500/40 text-xs font-mono">

@@ -49,6 +49,33 @@ const config: HardhatUserConfig = {
       gasPrice: "auto",
     },
   },
+  etherscan: {
+    apiKey: {
+      hadrian: "empty",
+      rubicon: "empty",
+    },
+    customChains: [
+      {
+        network: "hadrian",
+        chainId: 200010,
+        urls: {
+          apiURL: "https://via-hadrian.testnet.romeprotocol.xyz/api",
+          browserURL: "https://via-hadrian.testnet.romeprotocol.xyz",
+        },
+      },
+      {
+        network: "rubicon",
+        chainId: 7531,
+        urls: {
+          apiURL: "https://via.mainnet.romeprotocol.xyz/api",
+          browserURL: "https://via.mainnet.romeprotocol.xyz",
+        },
+      },
+    ],
+  },
+  sourcify: {
+    enabled: true,
+  },
   paths: {
     sources: "./contracts",
     tests: "./test",
