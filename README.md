@@ -1,8 +1,9 @@
-# 🏛️ Rome Arbitrage Executor (Dual-VM Atomic Arbitrageur)
+# 🏛️ RomeArb (Dual-VM Atomic Arbitrage)
 
 Production-grade, Rome-native Arbitrage Engine & Executor for **Rome Protocol**'s **Hadrian Testnet** (Chain ID: `200010`) migrating to **Rubicon Mainnet** (Chain ID: `7531`).
 
-- **Live Dashboard (Vercel):** [https://rome-arbitrage-executor.vercel.app](https://rome-arbitrage-executor.vercel.app)
+- **Official Web App:** [https://romearb.vercel.app](https://romearb.vercel.app)
+- **Mirror Link:** [https://rome-arb.vercel.app](https://rome-arb.vercel.app)
 - **GitHub Repository:** [https://github.com/tuannguyen1995/rome-arbitrage-executor](https://github.com/tuannguyen1995/rome-arbitrage-executor)
 - **Rome Arena App Portal:** [https://arena.mainnet.romeprotocol.xyz/apps/new](https://arena.mainnet.romeprotocol.xyz/apps/new)
 

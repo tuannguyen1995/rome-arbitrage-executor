@@ -403,11 +403,11 @@ export default function App() {
             <div>
               <div className="flex items-center gap-2">
                 <h1 className="font-cinzel text-xl font-extrabold tracking-wider bg-gradient-to-r from-amber-200 via-amber-400 to-amber-100 bg-clip-text text-transparent">
-                  ROME IMPERIUM
+                  ROME ARB
                 </h1>
               </div>
               <p className="text-[11px] text-slate-400 font-mono tracking-tight hidden sm:block">
-                SOLANA L1 RUNTIME ATOMIC ARBITRAGE COLLIDER
+                DUAL-VM ATOMIC ARBITRAGE // SOLANA L1 RUNTIME
               </p>
             </div>
           </div>
@@ -925,8 +925,8 @@ export default function App() {
       <footer className="border-t border-slate-900 bg-black/80 py-6 mt-12 text-xs text-slate-500 font-mono">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row items-center justify-between gap-4">
           <div className="flex items-center gap-2">
-            <span className="font-cinzel text-amber-300 font-bold">ROME PROTOCOL</span>
-            <span>— A Real EVM Inside Solana. EVM and Solana, One Market.</span>
+            <span className="font-cinzel text-amber-300 font-bold">ROME ARB</span>
+            <span>— Real EVM Inside Solana. EVM and Solana, One Market.</span>
           </div>
           <div className="flex items-center gap-4">
             <a href="https://github.com/tuannguyen1995/rome-arbitrage-executor" target="_blank" rel="noreferrer" className="hover:text-amber-400 transition">
