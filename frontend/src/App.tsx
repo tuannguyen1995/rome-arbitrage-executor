@@ -30,6 +30,8 @@ import {
   Compass,
   X,
   Globe,
+  Droplets,
+  Coins,
 } from "lucide-react";
 
 // ─── Network & Protocol Constants ────────────────────────────────────────────
@@ -74,8 +76,11 @@ interface ExecutionTelemetry {
 }
 
 export default function App() {
-  // Dual-Lane Wallet States
+  // Modal States
   const [walletModalOpen, setWalletModalOpen] = useState(false);
+  const [faucetModalOpen, setFaucetModalOpen] = useState(false);
+
+  // Dual-Lane Wallet States
   const [solanaConnected, setSolanaConnected] = useState(false);
   const [solanaAddress, setSolanaAddress] = useState("");
   const [solanaBalance, setSolanaBalance] = useState("0.00");
@@ -85,6 +90,8 @@ export default function App() {
   const [evmBalance, setEvmBalance] = useState("0.00");
 
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
+  const [airdropLoading, setAirdropLoading] = useState(false);
+  const [airdropMsg, setAirdropMsg] = useState<string | null>(null);
 
   // Live Telemetry States
   const [currentBlock, setCurrentBlock] = useState<bigint | null>(null);
@@ -195,7 +202,36 @@ export default function App() {
     setTimeout(() => setCopiedKey(null), 2000);
   };
 
-  // 1. Connect Solana Native Wallet (Phantom / Backpack)
+  // 1-Click Request Solana Devnet SOL Airdrop
+  const handleRequestSolAirdrop = async () => {
+    if (!solanaAddress) {
+      alert("Please connect your Phantom wallet first!");
+      return;
+    }
+    setAirdropLoading(true);
+    setAirdropMsg("Requesting 1.0 SOL airdrop from Solana Devnet RPC...");
+    try {
+      const pk = new PublicKey(solanaAddress);
+      const signature = await solanaConn.requestAirdrop(pk, 1000000000); // 1 SOL
+      await solanaConn.confirmTransaction(signature, "confirmed");
+
+      const lamports = await solanaConn.getBalance(pk);
+      setSolanaBalance((lamports / 1e9).toFixed(3));
+
+      setAirdropMsg("✅ Success! 1.0 SOL airdropped to your Phantom wallet.");
+      setConsoleLogs((prev) => [
+        `FAUCET: Received 1.0 Devnet SOL. Tx: ${signature.slice(0, 10)}...`,
+        ...prev,
+      ]);
+    } catch (err: any) {
+      console.error(err);
+      setAirdropMsg("Airdrop rate limit reached. Please use official faucet.solana.com link below.");
+    } finally {
+      setAirdropLoading(false);
+    }
+  };
+
+  // Connect Solana Native Wallet (Phantom / Backpack)
   const connectPhantomSolana = async () => {
     const solana = (window as any).phantom?.solana || (window as any).solana;
     if (!solana) {
@@ -222,7 +258,7 @@ export default function App() {
     }
   };
 
-  // 2. Connect EVM Wallet (MetaMask)
+  // Connect EVM Wallet (MetaMask)
   const connectMetaMask = async () => {
     let eth = (window as any).ethereum;
     if (eth?.providers) {
@@ -311,6 +347,150 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-radial-mesh bg-cyber-grid text-slate-100 antialiased relative">
+      {/* ─── FAUCET & FUNDING MODAL ────────────────────────────────────────── */}
+      {faucetModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-md">
+          <div className="w-full max-w-lg p-6 rounded-3xl glass-panel-gold border border-amber-500/50 shadow-2xl space-y-6 relative max-h-[90vh] overflow-y-auto animate-in fade-in zoom-in duration-200">
+            <div className="flex items-center justify-between pb-4 border-b border-slate-800">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-amber-500 to-indigo-600 flex items-center justify-center text-white shadow-lg">
+                  <Droplets className="w-5 h-5 text-amber-200" />
+                </div>
+                <div>
+                  <h3 className="font-cinzel text-lg font-bold text-white">TESTNET FAUCET & FUNDING</h3>
+                  <p className="text-[11px] text-slate-400">Acquire test tokens for Solana Devnet & Rome Hadrian EVM</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setFaucetModalOpen(false)}
+                className="p-1.5 rounded-xl bg-slate-900 text-slate-400 hover:text-white transition"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Solana Lane Faucets */}
+            <div className="p-4 rounded-2xl bg-purple-950/40 border border-purple-500/30 space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="font-bold text-sm text-purple-300 flex items-center gap-2">
+                  <span>👻</span>
+                  <span>Solana Lane (Phantom / Devnet)</span>
+                </span>
+                <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-purple-500/20 text-purple-300">
+                  SOLANA DEVNET
+                </span>
+              </div>
+
+              <p className="text-xs text-slate-300 leading-relaxed">
+                Need Devnet SOL for fees and Circle Devnet USDC to trade on Solana DAMM.
+              </p>
+
+              {/* 1-Click Airdrop Button */}
+              {solanaConnected ? (
+                <button
+                  onClick={handleRequestSolAirdrop}
+                  disabled={airdropLoading}
+                  className="w-full py-2.5 px-4 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-bold text-xs flex items-center justify-center gap-2 shadow-lg transition active:scale-[0.98] disabled:opacity-50"
+                >
+                  {airdropLoading ? (
+                    <>
+                      <RotateCw className="w-4 h-4 animate-spin" />
+                      Airdropping 1.0 SOL...
+                    </>
+                  ) : (
+                    <>
+                      <Coins className="w-4 h-4" />
+                      1-Click Airdrop 1.0 Devnet SOL
+                    </>
+                  )}
+                </button>
+              ) : (
+                <div className="text-[11px] text-purple-400 font-mono p-2 rounded bg-purple-950/60 border border-purple-900/50">
+                  👉 Connect Phantom wallet first to enable 1-Click SOL airdrop!
+                </div>
+              )}
+
+              {airdropMsg && (
+                <div className="p-2.5 rounded-lg bg-black/60 border border-purple-500/30 text-[11px] font-mono text-purple-200">
+                  {airdropMsg}
+                </div>
+              )}
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
+                <a
+                  href="https://faucet.solana.com/"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="p-2.5 rounded-xl bg-black/50 hover:bg-slate-900 border border-purple-500/20 text-xs font-semibold text-slate-200 flex items-center justify-between transition"
+                >
+                  <span>Solana Faucet (SOL)</span>
+                  <ExternalLink className="w-3.5 h-3.5 text-slate-400" />
+                </a>
+                <a
+                  href="https://faucet.circle.com/"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="p-2.5 rounded-xl bg-black/50 hover:bg-slate-900 border border-purple-500/20 text-xs font-semibold text-slate-200 flex items-center justify-between transition"
+                >
+                  <span>Circle Faucet (USDC)</span>
+                  <ExternalLink className="w-3.5 h-3.5 text-slate-400" />
+                </a>
+              </div>
+            </div>
+
+            {/* Rome Hadrian EVM Lane */}
+            <div className="p-4 rounded-2xl bg-amber-950/40 border border-amber-500/30 space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="font-bold text-sm text-amber-300 flex items-center gap-2">
+                  <span>🦊</span>
+                  <span>Rome EVM Lane (Hadrian Testnet)</span>
+                </span>
+                <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-amber-500/20 text-amber-300">
+                  CHAIN 200010
+                </span>
+              </div>
+
+              <p className="text-xs text-slate-300 leading-relaxed">
+                Rome Hadrian uses native <strong>USDC</strong> as gas token. Get faucet USDC directly from the Rome Protocol portal or Discord bot.
+              </p>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                <a
+                  href="https://hadrian.testnet.romeprotocol.xyz/"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="p-2.5 rounded-xl bg-black/50 hover:bg-slate-900 border border-amber-500/20 text-xs font-semibold text-slate-200 flex items-center justify-between transition"
+                >
+                  <span>Hadrian Faucet Portal</span>
+                  <ExternalLink className="w-3.5 h-3.5 text-slate-400" />
+                </a>
+                <a
+                  href="https://discord.gg/romeprotocol"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="p-2.5 rounded-xl bg-black/50 hover:bg-slate-900 border border-amber-500/20 text-xs font-semibold text-slate-200 flex items-center justify-between transition"
+                >
+                  <span>Rome Discord Faucet</span>
+                  <ExternalLink className="w-3.5 h-3.5 text-slate-400" />
+                </a>
+              </div>
+
+              {evmAddress && (
+                <div className="flex items-center justify-between p-2 rounded-lg bg-black/60 border border-amber-500/20 text-[11px] font-mono text-slate-400">
+                  <span className="truncate mr-2">EVM: {evmAddress}</span>
+                  <button
+                    onClick={() => copyToClipboard(evmAddress, "evmFaucet")}
+                    className="p-1 hover:text-white"
+                  >
+                    {copiedKey === "evmFaucet" ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ─── DUAL-LANE WALLET MODAL ────────────────────────────────────────── */}
       {walletModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md">
@@ -436,10 +616,19 @@ export default function App() {
             </div>
           </div>
 
-          {/* Dual Wallet Status / Connect Button */}
-          <div className="flex items-center gap-3">
+          {/* Actions: Faucet + Dual Wallet Status / Connect Button */}
+          <div className="flex items-center gap-2.5">
+            {/* FAUCET BUTTON */}
+            <button
+              onClick={() => setFaucetModalOpen(true)}
+              className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-gradient-to-r from-cyan-600/30 to-blue-600/30 hover:from-cyan-600/40 hover:to-blue-600/40 border border-cyan-500/40 text-cyan-200 font-bold text-xs shadow-lg transition active:scale-95"
+            >
+              <Droplets className="w-4 h-4 text-cyan-300 animate-pulse" />
+              <span>FAUCET</span>
+            </button>
+
             {solanaConnected && (
-              <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-purple-950/60 border border-purple-500/40 text-xs font-mono">
+              <div className="hidden md:flex items-center gap-2 px-3 py-1.5 rounded-xl bg-purple-950/60 border border-purple-500/40 text-xs font-mono">
                 <span>👻</span>
                 <span className="text-purple-300 font-bold">
                   {solanaAddress.slice(0, 4)}...{solanaAddress.slice(-4)}
@@ -450,7 +639,7 @@ export default function App() {
             )}
 
             {evmConnected && (
-              <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-orange-950/60 border border-orange-500/40 text-xs font-mono">
+              <div className="hidden md:flex items-center gap-2 px-3 py-1.5 rounded-xl bg-orange-950/60 border border-orange-500/40 text-xs font-mono">
                 <span>🦊</span>
                 <span className="text-orange-300 font-bold">
                   {evmAddress.slice(0, 4)}...{evmAddress.slice(-4)}
@@ -929,6 +1118,10 @@ export default function App() {
             <span>— Real EVM Inside Solana. EVM and Solana, One Market.</span>
           </div>
           <div className="flex items-center gap-4">
+            <button onClick={() => setFaucetModalOpen(true)} className="hover:text-cyan-400 text-cyan-300 transition flex items-center gap-1">
+              <Droplets className="w-3 h-3" /> Faucet & Funding
+            </button>
+            <span>•</span>
             <a href="https://github.com/tuannguyen1995/rome-arbitrage-executor" target="_blank" rel="noreferrer" className="hover:text-amber-400 transition">
               GitHub Repo
             </a>
