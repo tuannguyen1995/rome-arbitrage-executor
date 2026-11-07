@@ -106,13 +106,21 @@ export default function App() {
     localStorage.getItem("romearb_active_executor") || PROTOCOL_CONTRACTS.executor
   );
 
-  // Dual-Lane Wallet States
-  const [solanaConnected, setSolanaConnected] = useState(false);
-  const [solanaAddress, setSolanaAddress] = useState("");
+  // Dual-Lane Wallet States (Persisted across refreshes)
+  const [solanaConnected, setSolanaConnected] = useState<boolean>(() => {
+    return localStorage.getItem("romearb_solana_auto") === "true";
+  });
+  const [solanaAddress, setSolanaAddress] = useState<string>(() => {
+    return localStorage.getItem("romearb_solana_pubkey") || "";
+  });
   const [solanaBalance, setSolanaBalance] = useState("0.00");
 
-  const [evmConnected, setEvmConnected] = useState(false);
-  const [evmAddress, setEvmAddress] = useState("");
+  const [evmConnected, setEvmConnected] = useState<boolean>(() => {
+    return localStorage.getItem("romearb_evm_auto") === "true";
+  });
+  const [evmAddress, setEvmAddress] = useState<string>(() => {
+    return localStorage.getItem("romearb_evm_addr") || "";
+  });
   const [evmBalance, setEvmBalance] = useState("0.00");
 
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
@@ -423,6 +431,132 @@ export default function App() {
     }
   };
 
+  // Disconnect Handlers
+  const disconnectPhantom = () => {
+    try {
+      const solana = (window as any).phantom?.solana || (window as any).solana;
+      solana?.disconnect?.();
+    } catch {}
+    setSolanaConnected(false);
+    setSolanaAddress("");
+    setSolanaBalance("0.00");
+    localStorage.removeItem("romearb_solana_auto");
+    localStorage.removeItem("romearb_solana_pubkey");
+    setConsoleLogs((prev) => [
+      "SOLANA_AUTH: Phantom session disconnected.",
+      ...prev,
+    ]);
+  };
+
+  const disconnectMetaMask = () => {
+    setEvmConnected(false);
+    setEvmAddress("");
+    setEvmBalance("0.00");
+    localStorage.removeItem("romearb_evm_auto");
+    localStorage.removeItem("romearb_evm_addr");
+    setConsoleLogs((prev) => [
+      "ROME_AUTH: MetaMask session disconnected.",
+      ...prev,
+    ]);
+  };
+
+  // Eager Auto-Reconnect on Mount / F5 Refresh & Event Subscriptions
+  useEffect(() => {
+    let isMounted = true;
+
+    const restoreSessions = async () => {
+      // 1. Restore Solana (Phantom) silently
+      const shouldAutoSolana = localStorage.getItem("romearb_solana_auto") === "true";
+      const solana = (window as any).phantom?.solana || (window as any).solana;
+      if (shouldAutoSolana && solana) {
+        try {
+          const resp = await solana.connect({ onlyIfTrusted: true });
+          if (isMounted && resp?.publicKey) {
+            const pubkey = resp.publicKey.toString();
+            setSolanaAddress(pubkey);
+            setSolanaConnected(true);
+            try {
+              const pk = new PublicKey(pubkey);
+              const lamports = await solanaConn.getBalance(pk);
+              setSolanaBalance((lamports / 1e9).toFixed(3));
+            } catch {}
+            setConsoleLogs((prev) => [
+              `SOLANA_AUTH: Session restored silently (Phantom: ${pubkey.slice(0, 6)}...${pubkey.slice(-4)}).`,
+              ...prev,
+            ]);
+          }
+        } catch (e) {
+          console.log("Phantom silent reconnect skipped:", e);
+        }
+      }
+
+      // 2. Restore EVM (MetaMask) eagerly
+      const shouldAutoEvm = localStorage.getItem("romearb_evm_auto") === "true";
+      let eth = (window as any).ethereum;
+      if (eth?.providers) {
+        eth = eth.providers.find((p: any) => p.isMetaMask && !p.isPhantom) || eth;
+      }
+      if (shouldAutoEvm && eth) {
+        try {
+          const accounts = await eth.request({ method: "eth_accounts" });
+          if (isMounted && accounts && accounts.length > 0) {
+            const acc = accounts[0];
+            setEvmAddress(acc);
+            setEvmConnected(true);
+            try {
+              const bal = await evmClient.getBalance({ address: acc });
+              setEvmBalance((+formatUnits(bal, 18)).toFixed(4));
+            } catch {}
+            setConsoleLogs((prev) => [
+              `ROME_AUTH: Session restored eagerly (MetaMask: ${acc.slice(0, 6)}...${acc.slice(-4)}).`,
+              ...prev,
+            ]);
+          }
+        } catch (e) {
+          console.log("MetaMask eager reconnect error:", e);
+        }
+      }
+    };
+
+    restoreSessions();
+
+    // 3. Provider Event Listeners
+    let eth = (window as any).ethereum;
+    if (eth?.providers) {
+      eth = eth.providers.find((p: any) => p.isMetaMask && !p.isPhantom) || eth;
+    }
+    const handleAccountsChanged = (accs: string[]) => {
+      if (!isMounted) return;
+      if (!accs || accs.length === 0) {
+        disconnectMetaMask();
+      } else {
+        setEvmAddress(accs[0]);
+        setEvmConnected(true);
+        localStorage.setItem("romearb_evm_auto", "true");
+        localStorage.setItem("romearb_evm_addr", accs[0]);
+      }
+    };
+    const handleChainChanged = () => {
+      window.location.reload();
+    };
+
+    eth?.on?.("accountsChanged", handleAccountsChanged);
+    eth?.on?.("chainChanged", handleChainChanged);
+
+    const solana = (window as any).phantom?.solana || (window as any).solana;
+    const handleSolDisconnect = () => {
+      if (isMounted) disconnectPhantom();
+    };
+    solana?.on?.("disconnect", handleSolDisconnect);
+
+    return () => {
+      isMounted = false;
+      eth?.removeListener?.("accountsChanged", handleAccountsChanged);
+      eth?.removeListener?.("chainChanged", handleChainChanged);
+      solana?.removeListener?.("disconnect", handleSolDisconnect);
+    };
+  }, []);
+
   // Connect Solana Native Wallet (Phantom / Backpack)
   const connectPhantomSolana = async () => {
     const solana = (window as any).phantom?.solana || (window as any).solana;
@@ -435,6 +569,8 @@ export default function App() {
       const pubkey = resp.publicKey.toString();
       setSolanaAddress(pubkey);
       setSolanaConnected(true);
+      localStorage.setItem("romearb_solana_auto", "true");
+      localStorage.setItem("romearb_solana_pubkey", pubkey);
       setWalletModalOpen(false);
 
       const pk = new PublicKey(pubkey);
@@ -465,6 +601,8 @@ export default function App() {
       if (accounts && accounts[0]) {
         setEvmAddress(accounts[0]);
         setEvmConnected(true);
+        localStorage.setItem("romearb_evm_auto", "true");
+        localStorage.setItem("romearb_evm_addr", accounts[0]);
         setWalletModalOpen(false);
 
         try {
@@ -1371,52 +1509,148 @@ export default function App() {
 
             <div className="space-y-3">
               {/* Option 1: Phantom (Solana Native Lane) */}
-              <button
-                onClick={connectPhantomSolana}
-                className="w-full p-4 rounded-2xl bg-[#1b1535]/90 hover:bg-[#251d4d] border border-purple-500/40 text-left transition flex items-center justify-between group shadow-lg shadow-purple-900/20 active:scale-[0.98]"
-              >
-                <div className="flex items-center gap-3.5">
-                  <div className="w-11 h-11 rounded-xl bg-purple-600/30 border border-purple-500/40 flex items-center justify-center text-xl">
-                    👻
+              {solanaConnected ? (
+                <div className="p-4 rounded-2xl bg-[#1b1535]/95 border border-purple-500/50 space-y-3 shadow-lg shadow-purple-950/40">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-xl bg-purple-600/30 border border-purple-500/40 flex items-center justify-center text-xl">
+                        👻
+                      </div>
+                      <div>
+                        <div className="font-bold text-sm text-purple-200 flex items-center gap-2">
+                          Phantom (Connected)
+                          <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+                        </div>
+                        <div className="text-[11px] font-mono text-purple-300 truncate max-w-[200px]">
+                          {solanaAddress}
+                        </div>
+                      </div>
+                    </div>
+                    <span className="text-xs font-mono font-bold text-amber-300">
+                      {solanaBalance} SOL
+                    </span>
                   </div>
-                  <div>
-                    <div className="font-bold text-sm text-purple-200 flex items-center gap-2">
-                      Phantom Wallet
-                      <span className="px-2 py-0.5 rounded-full text-[9px] font-mono font-bold bg-purple-500/20 text-purple-300 border border-purple-500/30">
-                        SOLANA NATIVE
-                      </span>
-                    </div>
-                    <div className="text-[11px] text-slate-400">
-                      Connects directly via Solana runtime (No EVM chain error)
-                    </div>
+                  <div className="flex items-center gap-2 pt-1 border-t border-purple-500/20">
+                    <button
+                      onClick={() => copyToClipboard(solanaAddress, "modalSol")}
+                      className="flex-1 py-1.5 rounded-lg bg-black/50 hover:bg-black/70 border border-purple-500/30 text-[11px] font-mono text-purple-200 flex items-center justify-center gap-1.5 transition"
+                    >
+                      {copiedKey === "modalSol" ? (
+                        <>
+                          <Check className="w-3.5 h-3.5 text-emerald-400" />
+                          <span>Copied</span>
+                        </>
+                      ) : (
+                        <>
+                          <Copy className="w-3.5 h-3.5" />
+                          <span>Copy Address</span>
+                        </>
+                      )}
+                    </button>
+                    <button
+                      onClick={disconnectPhantom}
+                      className="flex-1 py-1.5 rounded-lg bg-rose-950/60 hover:bg-rose-900/80 border border-rose-500/50 text-[11px] font-mono text-rose-200 font-bold transition flex items-center justify-center gap-1.5"
+                    >
+                      <span>Disconnect</span>
+                    </button>
                   </div>
                 </div>
-                <ChevronRight className="w-4 h-4 text-purple-400 group-hover:translate-x-1 transition" />
-              </button>
+              ) : (
+                <button
+                  onClick={connectPhantomSolana}
+                  className="w-full p-4 rounded-2xl bg-[#1b1535]/90 hover:bg-[#251d4d] border border-purple-500/40 text-left transition flex items-center justify-between group shadow-lg shadow-purple-900/20 active:scale-[0.98]"
+                >
+                  <div className="flex items-center gap-3.5">
+                    <div className="w-11 h-11 rounded-xl bg-purple-600/30 border border-purple-500/40 flex items-center justify-center text-xl">
+                      👻
+                    </div>
+                    <div>
+                      <div className="font-bold text-sm text-purple-200 flex items-center gap-2">
+                        Phantom Wallet
+                        <span className="px-2 py-0.5 rounded-full text-[9px] font-mono font-bold bg-purple-500/20 text-purple-300 border border-purple-500/30">
+                          SOLANA NATIVE
+                        </span>
+                      </div>
+                      <div className="text-[11px] text-slate-400">
+                        Connects directly via Solana runtime (No EVM chain error)
+                      </div>
+                    </div>
+                  </div>
+                  <ChevronRight className="w-4 h-4 text-purple-400 group-hover:translate-x-1 transition" />
+                </button>
+              )}
 
               {/* Option 2: MetaMask (Rome EVM Lane) */}
-              <button
-                onClick={connectMetaMask}
-                className="w-full p-4 rounded-2xl bg-[#281a12]/90 hover:bg-[#382315] border border-orange-500/40 text-left transition flex items-center justify-between group shadow-lg shadow-orange-900/20 active:scale-[0.98]"
-              >
-                <div className="flex items-center gap-3.5">
-                  <div className="w-11 h-11 rounded-xl bg-orange-600/30 border border-orange-500/40 flex items-center justify-center text-xl">
-                    🦊
+              {evmConnected ? (
+                <div className="p-4 rounded-2xl bg-[#281a12]/95 border border-orange-500/50 space-y-3 shadow-lg shadow-orange-950/40">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-xl bg-orange-600/30 border border-orange-500/40 flex items-center justify-center text-xl">
+                        🦊
+                      </div>
+                      <div>
+                        <div className="font-bold text-sm text-orange-200 flex items-center gap-2">
+                          MetaMask (Connected)
+                          <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+                        </div>
+                        <div className="text-[11px] font-mono text-orange-300 truncate max-w-[200px]">
+                          {evmAddress}
+                        </div>
+                      </div>
+                    </div>
+                    <span className="text-xs font-mono font-bold text-amber-300">
+                      {evmBalance} USDC
+                    </span>
                   </div>
-                  <div>
-                    <div className="font-bold text-sm text-orange-200 flex items-center gap-2">
-                      MetaMask Wallet
-                      <span className="px-2 py-0.5 rounded-full text-[9px] font-mono font-bold bg-orange-500/20 text-orange-300 border border-orange-500/30">
-                        ROME EVM LANE
-                      </span>
-                    </div>
-                    <div className="text-[11px] text-slate-400">
-                      Connects to Rome Hadrian Testnet (Chain ID: 200010)
-                    </div>
+                  <div className="flex items-center gap-2 pt-1 border-t border-orange-500/20">
+                    <button
+                      onClick={() => copyToClipboard(evmAddress, "modalEvm")}
+                      className="flex-1 py-1.5 rounded-lg bg-black/50 hover:bg-black/70 border border-orange-500/30 text-[11px] font-mono text-orange-200 flex items-center justify-center gap-1.5 transition"
+                    >
+                      {copiedKey === "modalEvm" ? (
+                        <>
+                          <Check className="w-3.5 h-3.5 text-emerald-400" />
+                          <span>Copied</span>
+                        </>
+                      ) : (
+                        <>
+                          <Copy className="w-3.5 h-3.5" />
+                          <span>Copy Address</span>
+                        </>
+                      )}
+                    </button>
+                    <button
+                      onClick={disconnectMetaMask}
+                      className="flex-1 py-1.5 rounded-lg bg-rose-950/60 hover:bg-rose-900/80 border border-rose-500/50 text-[11px] font-mono text-rose-200 font-bold transition flex items-center justify-center gap-1.5"
+                    >
+                      <span>Disconnect</span>
+                    </button>
                   </div>
                 </div>
-                <ChevronRight className="w-4 h-4 text-orange-400 group-hover:translate-x-1 transition" />
-              </button>
+              ) : (
+                <button
+                  onClick={connectMetaMask}
+                  className="w-full p-4 rounded-2xl bg-[#281a12]/90 hover:bg-[#382315] border border-orange-500/40 text-left transition flex items-center justify-between group shadow-lg shadow-orange-900/20 active:scale-[0.98]"
+                >
+                  <div className="flex items-center gap-3.5">
+                    <div className="w-11 h-11 rounded-xl bg-orange-600/30 border border-orange-500/40 flex items-center justify-center text-xl">
+                      🦊
+                    </div>
+                    <div>
+                      <div className="font-bold text-sm text-orange-200 flex items-center gap-2">
+                        MetaMask Wallet
+                        <span className="px-2 py-0.5 rounded-full text-[9px] font-mono font-bold bg-orange-500/20 text-orange-300 border border-orange-500/30">
+                          ROME EVM LANE
+                        </span>
+                      </div>
+                      <div className="text-[11px] text-slate-400">
+                        Connects to Rome Hadrian Testnet (Chain ID: 200010)
+                      </div>
+                    </div>
+                  </div>
+                  <ChevronRight className="w-4 h-4 text-orange-400 group-hover:translate-x-1 transition" />
+                </button>
+              )}
             </div>
 
             <div className="p-3 rounded-xl bg-black/50 border border-slate-800 text-[11px] text-slate-400 font-mono">
@@ -1515,7 +1749,11 @@ export default function App() {
             </button>
 
             {solanaConnected && (
-              <div className="hidden md:flex items-center gap-2 px-3 py-1.5 rounded-xl bg-purple-950/60 border border-purple-500/40 text-xs font-mono">
+              <div
+                onClick={() => setWalletModalOpen(true)}
+                className="hidden md:flex items-center gap-2 px-3 py-1.5 rounded-xl bg-purple-950/60 hover:bg-purple-900/60 border border-purple-500/40 text-xs font-mono cursor-pointer transition"
+                title="Click to manage Phantom / disconnect"
+              >
                 <span>👻</span>
                 <span className="text-purple-300 font-bold">
                   {solanaAddress.slice(0, 4)}...{solanaAddress.slice(-4)}
@@ -1526,7 +1764,11 @@ export default function App() {
             )}
 
             {evmConnected && (
-              <div className="hidden md:flex items-center gap-2 px-3 py-1.5 rounded-xl bg-orange-950/60 border border-orange-500/40 text-xs font-mono">
+              <div
+                onClick={() => setWalletModalOpen(true)}
+                className="hidden md:flex items-center gap-2 px-3 py-1.5 rounded-xl bg-orange-950/60 border border-orange-500/40 hover:bg-orange-900/60 text-xs font-mono cursor-pointer transition"
+                title="Click to manage MetaMask / disconnect"
+              >
                 <span>🦊</span>
                 <span className="text-orange-300 font-bold">
                   {evmAddress.slice(0, 4)}...{evmAddress.slice(-4)}
