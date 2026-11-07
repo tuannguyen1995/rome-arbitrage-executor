@@ -1,0 +1,12 @@
+node_modules
+*/node_modules
+.env
+cache
+artifacts
+typechain-types
+out
+dist
+frontend/dist
+frontend/.vercel
+*.log
+deployment-hardhat.json
