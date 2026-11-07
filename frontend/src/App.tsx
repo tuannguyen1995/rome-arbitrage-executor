@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
-import { createPublicClient, http, formatUnits, parseAbi } from "viem";
+import { createPublicClient, http, formatUnits, parseAbi, encodeDeployData, getAddress } from "viem";
 import { Connection, PublicKey } from "@solana/web3.js";
+import { RomeArbitrageExecutorArtifact, FlashLoanReceiverArtifact } from "./contracts/artifacts";
 import {
   Zap,
   TrendingUp,
@@ -79,6 +80,22 @@ export default function App() {
   // Modal States
   const [walletModalOpen, setWalletModalOpen] = useState(false);
   const [faucetModalOpen, setFaucetModalOpen] = useState(false);
+  const [deployerModalOpen, setDeployerModalOpen] = useState(false);
+  const [isAdminUnlocked, setIsAdminUnlocked] = useState(false);
+  const [logoClickCount, setLogoClickCount] = useState(0);
+
+  // Deployer Form & Execution States
+  const [isDeployingExecutor, setIsDeployingExecutor] = useState(false);
+  const [isDeployingFlashLoan, setIsDeployingFlashLoan] = useState(false);
+  const [deployError, setDeployError] = useState<string | null>(null);
+  const [deployTxHash, setDeployTxHash] = useState<string | null>(null);
+  const [deployedExecutor, setDeployedExecutor] = useState<string>(
+    localStorage.getItem("romearb_active_executor") || ""
+  );
+  const [deployedFlashLoan, setDeployedFlashLoan] = useState<string>("");
+  const [activeExecutorAddress, setActiveExecutorAddress] = useState<string>(
+    localStorage.getItem("romearb_active_executor") || PROTOCOL_CONTRACTS.executor
+  );
 
   // Dual-Lane Wallet States
   const [solanaConnected, setSolanaConnected] = useState(false);
@@ -195,6 +212,172 @@ export default function App() {
     const interval = setInterval(syncOnChainTelemetry, 2500);
     return () => clearInterval(interval);
   }, [evmAddress, solanaAddress]);
+
+  // Sovereign / Admin Mode Listeners
+  useEffect(() => {
+    // 1. URL search param: ?admin=true or ?deploy=true
+    const params = new URLSearchParams(window.location.search);
+    if (
+      params.get("admin") === "true" ||
+      params.get("deploy") === "true" ||
+      params.get("sovereign") === "true"
+    ) {
+      setIsAdminUnlocked(true);
+      setDeployerModalOpen(true);
+      localStorage.setItem("romearb_admin_unlocked", "true");
+    } else if (localStorage.getItem("romearb_admin_unlocked") === "true") {
+      setIsAdminUnlocked(true);
+    }
+
+    // 2. Keyboard shortcut: Ctrl + Shift + D
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.shiftKey && (e.key === "D" || e.key === "d")) {
+        e.preventDefault();
+        setIsAdminUnlocked(true);
+        setDeployerModalOpen((prev) => !prev);
+        localStorage.setItem("romearb_admin_unlocked", "true");
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, []);
+
+  const handleLogoClick = () => {
+    const next = logoClickCount + 1;
+    setLogoClickCount(next);
+    if (next >= 5) {
+      setIsAdminUnlocked(true);
+      setDeployerModalOpen(true);
+      localStorage.setItem("romearb_admin_unlocked", "true");
+      setLogoClickCount(0);
+      setConsoleLogs((prev) => [
+        "👑 SOVEREIGN_ACCESS: Admin Deployer Console unlocked! In-browser deployment privileges enabled.",
+        ...prev,
+      ]);
+    }
+  };
+
+  // Deploy RomeArbitrageExecutor
+  const handleDeployExecutor = async () => {
+    let eth = (window as any).ethereum;
+    if (eth?.providers) {
+      eth = eth.providers.find((p: any) => p.isMetaMask && !p.isPhantom) || eth;
+    }
+    if (!eth || !evmAddress) {
+      alert("Please connect MetaMask on Rome Hadrian Testnet first!");
+      return;
+    }
+    setIsDeployingExecutor(true);
+    setDeployError(null);
+    setDeployTxHash(null);
+
+    try {
+      const cpiAddress = getAddress(PROTOCOL_CONTRACTS.cpiPrecompile);
+      const helperAddress = getAddress(PROTOCOL_CONTRACTS.helperPrecompile);
+
+      const deployData = encodeDeployData({
+        abi: RomeArbitrageExecutorArtifact.abi,
+        bytecode: RomeArbitrageExecutorArtifact.bytecode as `0x${string}`,
+        args: [cpiAddress, helperAddress],
+      });
+
+      setConsoleLogs((prev) => [
+        `DEPLOY_REQ: Broadcasting RomeArbitrageExecutor bytecode to Hadrian (200010)...`,
+        ...prev,
+      ]);
+
+      const txHash = await eth.request({
+        method: "eth_sendTransaction",
+        params: [
+          {
+            from: evmAddress,
+            data: deployData,
+          },
+        ],
+      });
+
+      setDeployTxHash(txHash);
+      setConsoleLogs((prev) => [
+        `DEPLOY_BROADCAST: Tx Hash ${txHash.slice(0, 16)}... Waiting for block confirmation...`,
+        ...prev,
+      ]);
+
+      const receipt = await evmClient.waitForTransactionReceipt({ hash: txHash });
+      if (receipt.contractAddress) {
+        const newAddress = receipt.contractAddress;
+        setDeployedExecutor(newAddress);
+        setActiveExecutorAddress(newAddress);
+        localStorage.setItem("romearb_active_executor", newAddress);
+        setConsoleLogs((prev) => [
+          `🎉 DEPLOY_SUCCESS: RomeArbitrageExecutor deployed at: ${newAddress}`,
+          `APP_TARGET: Updated active executor contract to: ${newAddress}`,
+          ...prev,
+        ]);
+      }
+    } catch (err: any) {
+      console.error("Deploy error:", err);
+      setDeployError(err?.message || "Failed to deploy contract. Check console for details.");
+      setConsoleLogs((prev) => [
+        `❌ DEPLOY_ERROR: ${err?.message?.slice(0, 80) || "Unknown error"}`,
+        ...prev,
+      ]);
+    } finally {
+      setIsDeployingExecutor(false);
+    }
+  };
+
+  // Deploy FlashLoanReceiver
+  const handleDeployFlashLoan = async () => {
+    let eth = (window as any).ethereum;
+    if (eth?.providers) {
+      eth = eth.providers.find((p: any) => p.isMetaMask && !p.isPhantom) || eth;
+    }
+    const targetExecutor = deployedExecutor || activeExecutorAddress;
+    if (!eth || !evmAddress) {
+      alert("Please connect MetaMask on Rome Hadrian Testnet first!");
+      return;
+    }
+    setIsDeployingFlashLoan(true);
+    setDeployError(null);
+
+    try {
+      const deployData = encodeDeployData({
+        abi: FlashLoanReceiverArtifact.abi,
+        bytecode: FlashLoanReceiverArtifact.bytecode as `0x${string}`,
+        args: [getAddress(targetExecutor)],
+      });
+
+      setConsoleLogs((prev) => [
+        `DEPLOY_REQ: Broadcasting FlashLoanReceiver bytecode (bound to ${targetExecutor.slice(0, 8)}...)...`,
+        ...prev,
+      ]);
+
+      const txHash = await eth.request({
+        method: "eth_sendTransaction",
+        params: [
+          {
+            from: evmAddress,
+            data: deployData,
+          },
+        ],
+      });
+
+      const receipt = await evmClient.waitForTransactionReceipt({ hash: txHash });
+      if (receipt.contractAddress) {
+        const newAddress = receipt.contractAddress;
+        setDeployedFlashLoan(newAddress);
+        setConsoleLogs((prev) => [
+          `🎉 DEPLOY_SUCCESS: FlashLoanReceiver deployed at: ${newAddress}`,
+          ...prev,
+        ]);
+      }
+    } catch (err: any) {
+      console.error("Deploy FlashLoan error:", err);
+      setDeployError(err?.message || "Failed to deploy FlashLoanReceiver.");
+    } finally {
+      setIsDeployingFlashLoan(false);
+    }
+  };
 
   const copyToClipboard = (text: string, key: string) => {
     navigator.clipboard.writeText(text);
@@ -347,6 +530,260 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-radial-mesh bg-cyber-grid text-slate-100 antialiased relative">
+      {/* ─── SOVEREIGN CONTRACT DEPLOYER MODAL (ADMIN ONLY) ────────────────── */}
+      {deployerModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-md">
+          <div className="w-full max-w-2xl p-6 rounded-3xl glass-panel-gold border border-amber-500/50 shadow-2xl space-y-6 relative max-h-[92vh] overflow-y-auto animate-in fade-in zoom-in duration-200">
+            {/* Header */}
+            <div className="flex items-center justify-between pb-4 border-b border-slate-800">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-amber-500 via-orange-500 to-yellow-500 flex items-center justify-center text-black font-extrabold shadow-lg shadow-amber-500/20">
+                  <Cpu className="w-5 h-5 text-black" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h3 className="font-cinzel text-lg font-bold text-white">SOVEREIGN CONTRACT DEPLOYER</h3>
+                    <span className="px-2 py-0.5 rounded-full text-[9px] font-mono font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                      ADMIN ONLY
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-slate-400">
+                    Self-deploy RomeArbitrageExecutor & FlashLoanReceiver directly via your connected MetaMask
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setDeployerModalOpen(false)}
+                className="p-1.5 rounded-xl bg-slate-900 text-slate-400 hover:text-white transition"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Deployer Context Banner */}
+            <div className="p-4 rounded-2xl bg-black/50 border border-amber-500/30 space-y-2.5 font-mono text-xs">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <span className="text-slate-400">Network:</span>
+                <span className="text-amber-300 font-bold">Rome Hadrian Testnet (Chain ID: 200010)</span>
+              </div>
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <span className="text-slate-400">EVM Deployer Address:</span>
+                {evmAddress ? (
+                  <span className="text-emerald-400 font-bold">{evmAddress}</span>
+                ) : (
+                  <span className="text-rose-400 font-bold">⚠️ MetaMask Not Connected</span>
+                )}
+              </div>
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <span className="text-slate-400">Gas Balance (Hadrian USDC):</span>
+                <span className="text-amber-400 font-bold">{evmBalance} USDC</span>
+              </div>
+              {parseFloat(evmBalance) < 0.04 && (
+                <div className="p-2.5 rounded-xl bg-amber-950/50 border border-amber-500/30 text-[11px] text-amber-200 flex items-center justify-between">
+                  <span>⚠️ Low USDC gas balance. Claim free testnet USDC first.</span>
+                  <button
+                    onClick={() => {
+                      setDeployerModalOpen(false);
+                      setFaucetModalOpen(true);
+                    }}
+                    className="px-2.5 py-1 rounded-lg bg-amber-500 hover:bg-amber-400 text-black font-bold text-[10px] transition"
+                  >
+                    OPEN FAUCET
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {/* Error message banner */}
+            {deployError && (
+              <div className="p-3 rounded-xl bg-rose-950/60 border border-rose-500/40 text-xs text-rose-200 font-mono">
+                <strong>Deployment Error:</strong> {deployError}
+              </div>
+            )}
+
+            {/* Deploy Section 1: RomeArbitrageExecutor.sol */}
+            <div className="p-5 rounded-2xl bg-slate-950/60 border border-slate-800 space-y-4">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <span className="text-base">📦</span>
+                  <div>
+                    <h4 className="font-bold text-sm text-white">1. Core Vault: RomeArbitrageExecutor.sol</h4>
+                    <p className="text-[11px] text-slate-400 font-mono">Dual-VM CPI Dispatcher & Profit Verifier</p>
+                  </div>
+                </div>
+                <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-purple-500/10 text-purple-300 border border-purple-500/20">
+                  Solidity 0.8.28
+                </span>
+              </div>
+
+              <div className="p-3 rounded-xl bg-black/40 border border-slate-800 text-[11px] font-mono space-y-1 text-slate-400">
+                <div>• CPI Precompile: <code className="text-purple-300">0xFF...08</code></div>
+                <div>• Helper Precompile: <code className="text-emerald-300">0xff...09</code></div>
+              </div>
+
+              {deployedExecutor ? (
+                <div className="p-3.5 rounded-xl bg-emerald-950/40 border border-emerald-500/40 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-emerald-300 flex items-center gap-1.5">
+                      <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                      Deployed Contract Address
+                    </span>
+                    <span className="text-[10px] font-mono text-slate-400">Status: LIVE</span>
+                  </div>
+                  <div className="flex items-center justify-between p-2 rounded-lg bg-black/60 border border-emerald-500/20 text-xs font-mono text-emerald-200">
+                    <span className="truncate mr-2">{deployedExecutor}</span>
+                    <div className="flex items-center gap-1">
+                      <button
+                        onClick={() => copyToClipboard(deployedExecutor, "depExec")}
+                        className="p-1 hover:text-white"
+                        title="Copy Address"
+                      >
+                        {copiedKey === "depExec" ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+                      </button>
+                      <a
+                        href={`https://via-hadrian.testnet.romeprotocol.xyz/address/${deployedExecutor}`}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="p-1 hover:text-white"
+                        title="View on Explorer"
+                      >
+                        <ExternalLink className="w-3.5 h-3.5" />
+                      </a>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <button
+                  onClick={handleDeployExecutor}
+                  disabled={isDeployingExecutor || !evmConnected}
+                  className="w-full py-3 px-4 rounded-xl bg-gradient-to-r from-amber-500 via-orange-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-black font-extrabold text-xs flex items-center justify-center gap-2 shadow-xl shadow-amber-500/20 transition active:scale-[0.98] disabled:opacity-50"
+                >
+                  {isDeployingExecutor ? (
+                    <>
+                      <RotateCw className="w-4 h-4 animate-spin text-black" />
+                      <span>Deploying to Hadrian (Confirm in MetaMask)...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Play className="w-4 h-4 fill-black text-black" />
+                      <span>DEPLOY ROME ARBITRAGE EXECUTOR</span>
+                    </>
+                  )}
+                </button>
+              )}
+            </div>
+
+            {/* Deploy Section 2: FlashLoanReceiver.sol */}
+            <div className="p-5 rounded-2xl bg-slate-950/60 border border-slate-800 space-y-4">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <span className="text-base">⚡</span>
+                  <div>
+                    <h4 className="font-bold text-sm text-white">2. Uncollateralized Hook: FlashLoanReceiver.sol</h4>
+                    <p className="text-[11px] text-slate-400 font-mono">ERC-3156 Flash Loan Hook for Zero-Capital Strikes</p>
+                  </div>
+                </div>
+                <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-blue-500/10 text-blue-300 border border-blue-500/20">
+                  ERC-3156
+                </span>
+              </div>
+
+              {deployedFlashLoan ? (
+                <div className="p-3.5 rounded-xl bg-emerald-950/40 border border-emerald-500/40 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-emerald-300 flex items-center gap-1.5">
+                      <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                      FlashLoanReceiver Address
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between p-2 rounded-lg bg-black/60 border border-emerald-500/20 text-xs font-mono text-emerald-200">
+                    <span className="truncate mr-2">{deployedFlashLoan}</span>
+                    <button
+                      onClick={() => copyToClipboard(deployedFlashLoan, "depFlash")}
+                      className="p-1 hover:text-white"
+                    >
+                      {copiedKey === "depFlash" ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <button
+                  onClick={handleDeployFlashLoan}
+                  disabled={isDeployingFlashLoan || !evmConnected}
+                  className="w-full py-3 px-4 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-bold text-xs flex items-center justify-center gap-2 shadow-xl shadow-blue-500/20 transition active:scale-[0.98] disabled:opacity-50"
+                >
+                  {isDeployingFlashLoan ? (
+                    <>
+                      <RotateCw className="w-4 h-4 animate-spin text-white" />
+                      <span>Deploying FlashLoanReceiver...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Sparkles className="w-4 h-4" />
+                      <span>DEPLOY FLASH LOAN RECEIVER</span>
+                    </>
+                  )}
+                </button>
+              )}
+            </div>
+
+            {/* Verification & Arena Registration Actions */}
+            {deployedExecutor && (
+              <div className="p-4 rounded-2xl bg-amber-950/30 border border-amber-500/30 space-y-3 font-mono text-xs">
+                <div className="font-bold text-amber-300 flex items-center gap-2">
+                  <Award className="w-4 h-4 text-amber-400" />
+                  <span>Next Steps: Verification & Arena Registration</span>
+                </div>
+
+                <div className="space-y-1.5 text-[11px] text-slate-300">
+                  <p>1. Copy Hardhat Verification CLI command:</p>
+                  <div
+                    onClick={() =>
+                      copyToClipboard(
+                        `npx hardhat verify --network hadrian ${deployedExecutor} "0xFF00000000000000000000000000000000000008" "0xFF00000000000000000000000000000000000009"`,
+                        "verifyCmd"
+                      )
+                    }
+                    className="p-2.5 rounded-lg bg-black/60 border border-slate-800 hover:border-slate-700 cursor-pointer flex items-center justify-between text-slate-300"
+                  >
+                    <span className="truncate mr-2">npx hardhat verify --network hadrian {deployedExecutor.slice(0, 10)}...</span>
+                    {copiedKey === "verifyCmd" ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+                  </div>
+                </div>
+
+                <div className="pt-2">
+                  <a
+                    href="https://arena.mainnet.romeprotocol.xyz/apps/new"
+                    target="_blank"
+                    rel="noreferrer"
+                    className="w-full py-2.5 px-4 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold text-xs flex items-center justify-center gap-2 shadow-lg transition active:scale-[0.98]"
+                  >
+                    <span>Register on Rome Arena (Start Earning Laurels)</span>
+                    <ExternalLink className="w-3.5 h-3.5" />
+                  </a>
+                </div>
+              </div>
+            )}
+
+            {/* Footer actions: Lock Admin console */}
+            <div className="flex items-center justify-between pt-2 border-t border-slate-800 text-xs font-mono text-slate-500">
+              <span>Sovereign Deployer Mode Active</span>
+              <button
+                onClick={() => {
+                  localStorage.removeItem("romearb_admin_unlocked");
+                  setIsAdminUnlocked(false);
+                  setDeployerModalOpen(false);
+                }}
+                className="hover:text-rose-400 transition flex items-center gap-1"
+              >
+                <Lock className="w-3 h-3" />
+                <span>Lock Deployer Console</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ─── FAUCET & FUNDING MODAL ────────────────────────────────────────── */}
       {faucetModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-md">
@@ -573,8 +1010,12 @@ export default function App() {
       <div className="border-b border-indigo-900/40 bg-black/60 backdrop-blur-xl sticky top-0 z-40">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-20 flex items-center justify-between gap-4">
           {/* Logo & Roman Brand */}
-          <div className="flex items-center gap-3.5">
-            <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-amber-500 via-indigo-600 to-purple-700 p-0.5 shadow-xl shadow-amber-500/10">
+          <div
+            onClick={handleLogoClick}
+            className="flex items-center gap-3.5 cursor-pointer select-none group"
+            title="RomeArb Engine (Click 5 times for Sovereign Deployer)"
+          >
+            <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-amber-500 via-indigo-600 to-purple-700 p-0.5 shadow-xl shadow-amber-500/10 group-hover:scale-105 transition">
               <div className="w-full h-full bg-[#080b12] rounded-[14px] flex items-center justify-center relative overflow-hidden">
                 <div className="absolute inset-0 bg-gradient-to-tr from-amber-500/20 to-transparent"></div>
                 <Flame className="w-6 h-6 text-amber-400 relative z-10 animate-pulse" />
@@ -585,6 +1026,11 @@ export default function App() {
                 <h1 className="font-cinzel text-xl font-extrabold tracking-wider bg-gradient-to-r from-amber-200 via-amber-400 to-amber-100 bg-clip-text text-transparent">
                   ROME ARB
                 </h1>
+                {isAdminUnlocked && (
+                  <span className="px-1.5 py-0.5 rounded text-[9px] font-mono font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40">
+                    ADMIN
+                  </span>
+                )}
               </div>
               <p className="text-[11px] text-slate-400 font-mono tracking-tight hidden sm:block">
                 DUAL-VM ATOMIC ARBITRAGE // SOLANA L1 RUNTIME
@@ -626,6 +1072,18 @@ export default function App() {
               <Droplets className="w-4 h-4 text-cyan-300 animate-pulse" />
               <span>FAUCET</span>
             </button>
+
+            {/* SOVEREIGN DEPLOYER (ADMIN) BUTTON */}
+            {isAdminUnlocked && (
+              <button
+                onClick={() => setDeployerModalOpen(true)}
+                className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-gradient-to-r from-amber-600/30 to-yellow-600/30 hover:from-amber-600/40 hover:to-yellow-600/40 border border-amber-500/50 text-amber-200 font-bold text-xs shadow-lg transition active:scale-95 animate-pulse"
+                title="Sovereign Contract Deployer"
+              >
+                <Cpu className="w-4 h-4 text-amber-400" />
+                <span>DEPLOYER (ADMIN)</span>
+              </button>
+            )}
 
             {solanaConnected && (
               <div className="hidden md:flex items-center gap-2 px-3 py-1.5 rounded-xl bg-purple-950/60 border border-purple-500/40 text-xs font-mono">
@@ -1007,10 +1465,21 @@ export default function App() {
             {/* Protocol Verifier Badges */}
             <div className="p-4 rounded-2xl bg-slate-950/60 border border-slate-800 space-y-2 text-xs font-mono">
               <div className="text-[11px] text-slate-400 font-bold uppercase tracking-wider flex items-center justify-between">
-                <span>Verified Precompile Contracts</span>
+                <span>Verified Protocol Contracts</span>
                 <span className="text-emerald-400">100% On-Chain</span>
               </div>
               <div className="space-y-1.5 text-[11px]">
+                <div
+                  onClick={() => copyToClipboard(activeExecutorAddress, "activeExec")}
+                  className="p-2 rounded-lg bg-slate-900 border border-slate-800 hover:border-slate-700 flex items-center justify-between cursor-pointer group"
+                  title="Target Executor Vault Address"
+                >
+                  <span className="text-slate-400">Executor Vault:</span>
+                  <span className="text-amber-300 font-bold flex items-center gap-1.5">
+                    {activeExecutorAddress.slice(0, 6)}...{activeExecutorAddress.slice(-4)}{" "}
+                    {copiedKey === "activeExec" ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3 opacity-40 group-hover:opacity-100" />}
+                  </span>
+                </div>
                 <div
                   onClick={() => copyToClipboard(PROTOCOL_CONTRACTS.cpiPrecompile, "cpi")}
                   className="p-2 rounded-lg bg-slate-900 border border-slate-800 hover:border-slate-700 flex items-center justify-between cursor-pointer group"
