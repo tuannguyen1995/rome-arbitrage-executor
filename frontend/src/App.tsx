@@ -698,6 +698,7 @@ export default function App() {
               from: evmAddress,
               to: activeExecutorAddress,
               data: calldata,
+              gas: "0x7A120", // 500,000 gas limit (~0.017 USDC fee, prevents MetaMask fallback to 30M block limit on revert)
             },
           ],
         });
