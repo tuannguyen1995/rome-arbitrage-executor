@@ -1662,130 +1662,144 @@ export default function App() {
       )}
 
       {/* ─── TOP STATUS BAR ────────────────────────────────────────────────── */}
-      <div className="border-b border-indigo-900/40 bg-black/60 backdrop-blur-xl sticky top-0 z-40">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-20 flex items-center justify-between gap-4">
+      <div className="border-b border-indigo-900/40 bg-black/75 backdrop-blur-xl sticky top-0 z-40">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-20 flex items-center justify-between gap-3 sm:gap-4">
           {/* Logo & Roman Brand */}
           <div
             onClick={handleLogoClick}
-            className="flex items-center gap-3.5 cursor-pointer select-none group"
+            className="flex items-center gap-3 cursor-pointer select-none group flex-shrink-0 py-1"
             title="RomeArb Engine (Click 5 times for Sovereign Deployer)"
           >
-            <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-amber-500 via-indigo-600 to-purple-700 p-0.5 shadow-xl shadow-amber-500/10 group-hover:scale-105 transition">
+            <div className="w-10 h-10 sm:w-11 sm:h-11 rounded-2xl bg-gradient-to-br from-amber-500 via-indigo-600 to-purple-700 p-0.5 shadow-xl shadow-amber-500/10 group-hover:scale-105 transition flex-shrink-0">
               <div className="w-full h-full bg-[#080b12] rounded-[14px] flex items-center justify-center relative overflow-hidden">
                 <div className="absolute inset-0 bg-gradient-to-tr from-amber-500/20 to-transparent"></div>
-                <Flame className="w-6 h-6 text-amber-400 relative z-10 animate-pulse" />
+                <Flame className="w-5 h-5 text-amber-400 relative z-10 animate-pulse" />
               </div>
             </div>
-            <div>
+            <div className="flex flex-col justify-center">
               <div className="flex items-center gap-2">
-                <h1 className="font-cinzel text-xl font-extrabold tracking-wider bg-gradient-to-r from-amber-200 via-amber-400 to-amber-100 bg-clip-text text-transparent">
+                <span className="font-cinzel text-lg sm:text-xl font-extrabold tracking-wider bg-gradient-to-r from-amber-200 via-amber-400 to-amber-100 bg-clip-text text-transparent leading-none">
                   ROME ARB
-                </h1>
+                </span>
                 {isAdminUnlocked && (
-                  <span className="px-1.5 py-0.5 rounded text-[9px] font-mono font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40">
+                  <span className="px-1.5 py-0.5 rounded text-[8px] font-mono font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40 leading-none">
                     ADMIN
                   </span>
                 )}
               </div>
-              <p className="text-[11px] text-slate-400 font-mono tracking-tight hidden sm:block">
+              <p className="text-[10px] text-slate-400 font-mono tracking-tight mt-1 hidden sm:block leading-none">
                 DUAL-VM ATOMIC ARBITRAGE // SOLANA L1 RUNTIME
               </p>
             </div>
           </div>
 
           {/* Synchronizer Telemetry Ticker */}
-          <div className="hidden xl:flex items-center gap-6 px-4 py-2 rounded-xl bg-slate-950/70 border border-slate-800/80 font-mono text-xs">
-            <div className="flex items-center gap-2">
+          <div className="hidden lg:flex items-center gap-3.5 px-3.5 py-2 rounded-xl bg-slate-950/80 border border-slate-800 text-[11px] font-mono flex-shrink-0">
+            <div className="flex items-center gap-1.5">
               <div className="w-2 h-2 rounded-full bg-cyan-400 animate-ping"></div>
-              <span className="text-slate-400">HADRIAN EVM:</span>
+              <span className="text-slate-400">EVM:</span>
               <span className="text-cyan-300 font-bold">
-                {currentBlock ? `#${currentBlock.toString()}` : "CONNECTING..."}
+                {currentBlock ? `#${currentBlock.toString()}` : "..."}
               </span>
             </div>
             <div className="h-3 w-px bg-slate-800"></div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1.5">
               <div className="w-2 h-2 rounded-full bg-purple-400 animate-pulse"></div>
-              <span className="text-slate-400">SOLANA SLOT:</span>
+              <span className="text-slate-400">SOL:</span>
               <span className="text-purple-300 font-bold">
-                {currentSolanaSlot ? `#${currentSolanaSlot.toLocaleString()}` : "SYNCING..."}
+                {currentSolanaSlot ? `#${currentSolanaSlot.toLocaleString()}` : "..."}
               </span>
             </div>
             <div className="h-3 w-px bg-slate-800"></div>
             <div className="flex items-center gap-1.5 text-emerald-400 font-bold">
               <Activity className="w-3.5 h-3.5 animate-spin" />
-              <span>~400ms FINALITY</span>
+              <span>~400ms</span>
             </div>
           </div>
 
-          {/* Actions: Faucet + Dual Wallet Status / Connect Button */}
-          <div className="flex items-center gap-2.5">
+          {/* Actions: Navigation Tools + Unified Wallet Button */}
+          <div className="flex items-center gap-2 sm:gap-2.5 flex-shrink-0">
             {/* ROME ARENA LAURELS BUTTON */}
             <button
               onClick={() => setArenaModalOpen(true)}
-              className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-gradient-to-r from-amber-500/20 to-yellow-500/20 hover:from-amber-500/30 hover:to-yellow-500/30 border border-amber-500/40 text-amber-300 font-bold text-xs shadow-lg transition active:scale-95"
+              className="h-9 px-3 rounded-xl bg-gradient-to-r from-amber-500/15 to-yellow-500/15 hover:from-amber-500/25 hover:to-yellow-500/25 border border-amber-500/40 text-amber-300 font-bold text-xs shadow-md transition flex items-center gap-1.5 active:scale-95"
               title="Rome Arena Laurels & Milestones"
             >
-              <Award className="w-4 h-4 text-amber-400 animate-pulse" />
-              <span className="hidden sm:inline">ARENA LAURELS</span>
-              <span className="sm:hidden">ARENA</span>
+              <Award className="w-3.5 h-3.5 text-amber-400 animate-pulse" />
+              <span className="hidden sm:inline">ARENA</span>
             </button>
 
             {/* CPI BORSH INSPECTOR BUTTON */}
             <button
               onClick={() => setCpiInspectorModalOpen(true)}
-              className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-gradient-to-r from-purple-500/20 to-indigo-500/20 hover:from-purple-500/30 hover:to-indigo-500/30 border border-purple-500/40 text-purple-300 font-bold text-xs shadow-lg transition active:scale-95"
+              className="h-9 px-3 rounded-xl bg-gradient-to-r from-purple-500/15 to-indigo-500/15 hover:from-purple-500/25 hover:to-indigo-500/25 border border-purple-500/40 text-purple-300 font-bold text-xs shadow-md transition flex items-center gap-1.5 active:scale-95"
               title="Inspect CPI Precompile Payload"
             >
-              <FileCode className="w-4 h-4 text-purple-300" />
-              <span className="hidden md:inline">CPI INSPECTOR</span>
+              <FileCode className="w-3.5 h-3.5 text-purple-300" />
+              <span className="hidden md:inline">CPI</span>
             </button>
 
             {/* FAUCET BUTTON */}
             <button
               onClick={() => setFaucetModalOpen(true)}
-              className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-gradient-to-r from-cyan-600/30 to-blue-600/30 hover:from-cyan-600/40 hover:to-blue-600/40 border border-cyan-500/40 text-cyan-200 font-bold text-xs shadow-lg transition active:scale-95"
+              className="h-9 px-3 rounded-xl bg-gradient-to-r from-cyan-600/20 to-blue-600/20 hover:from-cyan-600/30 hover:to-blue-600/30 border border-cyan-500/40 text-cyan-200 font-bold text-xs shadow-md transition flex items-center gap-1.5 active:scale-95"
+              title="Testnet Faucet & Funding"
             >
-              <Droplets className="w-4 h-4 text-cyan-300 animate-pulse" />
-              <span>FAUCET</span>
+              <Droplets className="w-3.5 h-3.5 text-cyan-300 animate-pulse" />
+              <span className="hidden sm:inline">FAUCET</span>
             </button>
 
-            {solanaConnected && (
-              <div
+            {/* Unified Dual-Lane Wallet Capsule */}
+            {solanaConnected && evmConnected ? (
+              <button
                 onClick={() => setWalletModalOpen(true)}
-                className="hidden md:flex items-center gap-2 px-3 py-1.5 rounded-xl bg-purple-950/60 hover:bg-purple-900/60 border border-purple-500/40 text-xs font-mono cursor-pointer transition"
-                title="Click to manage Phantom / disconnect"
+                className="h-9 px-3 sm:px-3.5 rounded-xl bg-slate-900/90 hover:bg-slate-800 border border-amber-500/40 text-xs font-mono transition shadow-lg flex items-center gap-2 sm:gap-2.5 active:scale-95 group"
+                title="Dual-Lane Connected: Click to manage wallets or disconnect"
+              >
+                <div className="flex items-center gap-1 text-purple-300 font-bold">
+                  <span>👻</span>
+                  <span>{solanaBalance} SOL</span>
+                </div>
+                <span className="text-slate-600">|</span>
+                <div className="flex items-center gap-1 text-orange-300 font-bold">
+                  <span>🦊</span>
+                  <span>{evmBalance} USDC</span>
+                </div>
+                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse ml-0.5"></span>
+              </button>
+            ) : solanaConnected ? (
+              <button
+                onClick={() => setWalletModalOpen(true)}
+                className="h-9 px-3 rounded-xl bg-purple-950/70 hover:bg-purple-900/70 border border-purple-500/40 text-xs font-mono transition flex items-center gap-2 text-purple-200 active:scale-95"
+                title="Phantom Connected: Click to manage"
               >
                 <span>👻</span>
-                <span className="text-purple-300 font-bold">
-                  {solanaAddress.slice(0, 4)}...{solanaAddress.slice(-4)}
-                </span>
+                <span className="font-bold">{solanaAddress.slice(0, 4)}...{solanaAddress.slice(-4)}</span>
                 <span className="text-slate-500">|</span>
                 <span className="text-amber-300 font-bold">{solanaBalance} SOL</span>
-              </div>
-            )}
-
-            {evmConnected && (
-              <div
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+              </button>
+            ) : evmConnected ? (
+              <button
                 onClick={() => setWalletModalOpen(true)}
-                className="hidden md:flex items-center gap-2 px-3 py-1.5 rounded-xl bg-orange-950/60 border border-orange-500/40 hover:bg-orange-900/60 text-xs font-mono cursor-pointer transition"
-                title="Click to manage MetaMask / disconnect"
+                className="h-9 px-3 rounded-xl bg-orange-950/70 hover:bg-orange-900/70 border border-orange-500/40 text-xs font-mono transition flex items-center gap-2 text-orange-200 active:scale-95"
+                title="MetaMask Connected: Click to manage"
               >
                 <span>🦊</span>
-                <span className="text-orange-300 font-bold">
-                  {evmAddress.slice(0, 4)}...{evmAddress.slice(-4)}
-                </span>
+                <span className="font-bold">{evmAddress.slice(0, 4)}...{evmAddress.slice(-4)}</span>
                 <span className="text-slate-500">|</span>
                 <span className="text-amber-300 font-bold">{evmBalance} USDC</span>
-              </div>
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+              </button>
+            ) : (
+              <button
+                onClick={() => setWalletModalOpen(true)}
+                className="h-9 px-3.5 sm:px-4 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-black font-extrabold text-xs transition tracking-wide shadow-lg shadow-amber-500/20 flex items-center gap-2 active:scale-95"
+              >
+                <Wallet className="w-3.5 h-3.5" />
+                <span>CONNECT WALLET</span>
+              </button>
             )}
-
-            <button
-              onClick={() => setWalletModalOpen(true)}
-              className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-black font-extrabold text-xs transition-all tracking-wide shadow-lg shadow-amber-500/20 active:scale-95"
-            >
-              <Wallet className="w-4 h-4" />
-              {isAnyWalletConnected ? "MANAGE WALLETS" : "CONNECT IMPERATOR WALLET"}
-            </button>
           </div>
         </div>
       </div>
